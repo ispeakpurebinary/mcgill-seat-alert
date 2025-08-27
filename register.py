@@ -13,6 +13,8 @@ import json
 import argparse
 import logging
 from requests.exceptions import RequestException
+import traceback
+
 
 # Use environment variables for Pushover credentials
 PUSHOVER_USER_KEY = os.environ.get('PUSHOVER_USER_KEY')
@@ -70,6 +72,7 @@ def get_course_availability(driver, course):
         scroll_to_element(driver, course_box)
         
         sections = course_box.find_elements(By.XPATH, ".//div[contains(@class, 'selection_row')]")
+        logging.info(f"sections {sections}")
         logging.info(f"Found {len(sections)} sections for course: {course}")
         
         available_sections = []
@@ -79,6 +82,7 @@ def get_course_availability(driver, course):
                 if "Lec" in section.text:
                     # Extract CRN and check for open seats or waitlist availability
                     crn = section.find_element(By.XPATH, ".//span[@class='crn_value']").text
+                    logging.info(f"crns {crn}")
                     
                     seats_element = section.find_element(By.XPATH, ".//span[contains(@class, 'leftnclear') and contains(., 'Seats:')]")
                     if "Full" not in seats_element.text:
@@ -93,8 +97,10 @@ def get_course_availability(driver, course):
         
         return available_sections
     except TimeoutException:
+        pass
         logging.error(f"Timeout while searching for course: {course}")
     except Exception as e:
+        pass
         logging.error(f"Error checking availability for {course}: {str(e)}")
     return []
 
@@ -118,7 +124,7 @@ def perform_web_task():
         return
 
     courses = config.get('courses', [])
-    term = config.get('term', '202409')  # Default to Fall 2024 if not specified
+    term = config.get('term', '202601')  # Default to Fall 2024 if not specified
 
     if not courses:
         logging.info("No courses to check. Exiting.")
@@ -130,47 +136,7 @@ def perform_web_task():
     
     try:
         # Navigate to the course selection page
-        load_webpage(driver, "https://vsb.mcgill.ca/vsb/criteria.jsp?access=0&lang=en&tip=1&page=results&scratch=0&term=0&sort=none&filters=iiiiiiiii&bbs=&ds=&cams=Distance_Downtown_Macdonald_Off-Campus&locs=any&isrts=&course_0_0=&sa_0_0=&cs_0_0=--+All+--&cpn_0_0=&csn_0_0=&ca_0_0=&dropdown_0_0=al&ig_0_0=0&rq_0_0=")
-        
-        # Click the Continue button
-        continue_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, "//input[@type='button' and @value='Continue']")))
-        scroll_to_element(driver, continue_button)
-        continue_button.click()
-        logging.info("Clicked the Continue button.")
-
-        # Select the desired term
-        term_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.XPATH, f"//input[@name='radterm' and @data-term='{term}']")))
-        scroll_to_element(driver, term_button)
-        term_button.click()
-        logging.info(f"Selected term: {term}")
-
-        time.sleep(5)
-
-        # Enter and select each course
-        for course in courses:
-            logging.info(f"Entering course: {course}")
-            
-            course_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "code_number")))
-            scroll_to_element(driver, course_input)
-            course_input.clear()
-            course_input.send_keys(course)
-            
-            select_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "addCourseButton")))
-            scroll_to_element(driver, select_button)
-            select_button.click()
-            
-            logging.info(f"Selected course: {course}")
-            time.sleep(3)
-
-        logging.info("All courses entered and selected.")
-
-        # Generate schedules
-        generate_button = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "do_search")))
-        scroll_to_element(driver, generate_button)
-        generate_button.click()
-        logging.info("Clicked 'Generate Schedules' button.")
-
-        time.sleep(15)
+        load_webpage(driver, "https://vsb.mcgill.ca/criteria.jsp?access=0&lang=en&tip=0&page=results&scratch=0&advice=0&legend=1&term=202601&sort=none&filters=iiiiiiiiii&bbs=&ds=&cams=DOWNTOWN_OFF-CAMPUS_DISTANCE_MACDONALD&locs=any&isrts=any&ses=any&pl=&pac=1&course_0_0=FACC-300&va_0_0=e602&sa_0_0=&cs_0_0=--202601_2657-2663-&cpn_0_0=&csn_0_0=&ca_0_0=&dropdown_0_0=al&ig_0_0=0&rq_0_0=&bg_0_0=0&cr_0_0=&ss_0_0=0&sbc_0_0=0")
 
         # Check availability for each course
         logging.info("Checking course availability...")
@@ -178,9 +144,11 @@ def perform_web_task():
         for course in courses:
             available_sections = get_course_availability(driver, course)
             if available_sections:
-                available_courses[course] = available_sections
+                # available_courses[course] = available_sections
                 logging.info(f"Course {course} is available:")
                 for crn, availability_type in available_sections:
+                    if crn == '2657':
+                        available_courses[course] = available_sections
                     logging.info(f"  CRN: {crn}, Availability: {availability_type}")
             else:
                 logging.info(f"Course {course} is not available")
@@ -200,6 +168,7 @@ def perform_web_task():
         logging.info("All courses have been checked for availability.")
     except Exception as e:
         logging.error(f"An error occurred during web task: {str(e)}")
+        logging.debug("Traceback:\n%s", traceback.format_exc())
     finally:
         driver.quit()
 
